@@ -128,11 +128,32 @@
       Navigateur requis : <strong>Chrome</strong> ou <strong>Edge</strong> (Web Serial API)
     </p>
 
+    <!-- Les quatre surfaces web du produit se citent l'une l'autre, dans le
+         même ordre partout : console, démonstration, installer la carte,
+         installer le View, puis le site. Un utilisateur arrive par n'importe
+         laquelle — un lien reçu, un QR code sur la carte — et doit pouvoir
+         atteindre les autres sans savoir qu'elles existent.
+         ⚠️ Liens absolus : les deux flashers sont sur deux sites Pages
+         distincts, un chemin relatif n'y mène pas. -->
     <div class="links">
+      <a class="link-card" href="https://chpeps.github.io/tinyrail-releases/console/">
+        <span class="link-icon">📱</span>
+        <span>
+          <strong>Console Bluetooth</strong>
+          Piloter la carte depuis un téléphone, sans Wi-Fi ni Home Assistant
+        </span>
+      </a>
+      <a class="link-card" href="https://chpeps.github.io/tinyrail-releases/app/">
+        <span class="link-icon">▶️</span>
+        <span>
+          <strong>Démonstration</strong>
+          L'application, en ligne, sans carte : voir ce qu'elle affiche avant d'acheter
+        </span>
+      </a>
       <a class="link-card" href="https://chpeps.github.io/tinyrail-releases/">
         <span class="link-icon">⚡</span>
         <span>
-          <strong>Firmware de la carte TinyRail</strong>
+          <strong>Installer la carte TinyRail</strong>
           L'autre moitié du produit : la carte 8 canaux que le View affiche
         </span>
       </a>
