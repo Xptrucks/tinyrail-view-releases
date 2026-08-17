@@ -1,0 +1,13 @@
+{
+  "name": "TinyRail View",
+  "version": "0.0.1",
+  "home_assistant_domain": "esphome",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "https://chpeps.github.io/tinyrail-view-releases/firmware.factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
