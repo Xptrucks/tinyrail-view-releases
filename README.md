@@ -1,9 +1,15 @@
 # tinyrail-view-releases
 
+> ⚠️ **Miroir historique.** L'adresse du produit est **https://view.tinyrail.xptrucks.fr**.
+> Ce dépôt sert les mêmes fichiers, à l'octet près, et continue d'être alimenté par la CI
+> **sans date de fin** — mais c'est le second exemplaire, pas la référence. Ne pas le citer
+> comme adresse officielle.
+
 Binaires publics et page d'installation du **TinyRail_View**, l'afficheur e-paper
 qui accompagne la carte TinyRail.
 
-**Page d'installation : https://chpeps.github.io/tinyrail-view-releases/**
+**Page d'installation : https://view.tinyrail.xptrucks.fr/**
+(miroir : `https://chpeps.github.io/tinyrail-view-releases/`)
 
 Ce dépôt est **écrit par la CI**, jamais à la main : le workflow `Release TinyRail View`
 du dépôt source y pousse `firmware.bin`, `firmware.factory.bin`, `install-manifest.json`,
