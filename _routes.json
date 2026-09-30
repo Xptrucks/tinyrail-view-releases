@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "include": [
+    "/",
+    "/index.html",
+    "/firmware.factory.bin",
+    "/firmware-beta.factory.bin",
+    "/api/*",
+    "/auth/*"
+  ],
+  "exclude": []
+}

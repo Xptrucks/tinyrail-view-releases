@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TinyRail View — Installation Firmware</title>
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     /* Même charte que la page d'installation de la carte : les deux vivent
        côte à côte, et un client qui passe de l'une à l'autre doit reconnaître
@@ -46,8 +45,17 @@
       padding-left: .3rem;
     }
     .steps li::marker { color: var(--brand); font-weight: bold; }
-    esp-web-install-button { display: block; margin: 1.5rem 0 1rem; }
-    esp-web-install-button button {
+    /* Le flasheur (flasheur.js) : lot, bouton, progression, état. */
+    #flasheur { margin: 1.5rem 0 1rem; text-align: left; }
+    .flash-qui { font-size: .8rem; color: #666; margin-bottom: .8rem; }
+    .flash-qui a { color: var(--brand); }
+    .flash-lot { display: block; font-size: .85rem; color: #444; margin-bottom: .8rem; }
+    .flash-lot select { display: block; width: 100%; margin-top: .3rem; padding: .5rem; border-radius: 8px; border: 1px solid #d0d7e2; font-size: .95rem; }
+    #flasheur progress { width: 100%; margin-top: .8rem; }
+    .flash-etat { font-size: .9rem; color: #333; margin-top: .6rem; min-height: 1.2em; }
+    .flash-journal { margin-top: .6rem; font-size: .75rem; color: #777; }
+    .flash-journal pre { white-space: pre-wrap; max-height: 12rem; overflow: auto; }
+    .flash-go {
       background: var(--brand);
       color: white;
       border: none;
@@ -59,7 +67,8 @@
       width: 100%;
       transition: background .2s;
     }
-    esp-web-install-button button:hover { background: #1557b0; }
+    .flash-go:hover { background: #1557b0; }
+    .flash-go:disabled { background: #9bb8e8; cursor: default; }
     .note { font-size: .8rem; color: #999; line-height: 1.6; }
     .note a { color: var(--brand); text-decoration: none; }
     .note a:hover { text-decoration: underline; }
@@ -115,18 +124,19 @@
 
     <ol class="steps">
       <li>Connectez le View en <strong>USB-C</strong> à votre ordinateur</li>
-      <li>Cliquez sur <strong>Installer</strong> ci-dessous</li>
+      <li>Choisissez le <strong>lot de production</strong>, puis cliquez sur <strong>Flasher</strong></li>
       <li>Sélectionnez le port USB dans le navigateur</li>
       <li>Ensuite, tout se règle depuis l'<strong>application mobile</strong> :
           ajoutez le View, son écran affiche un code à 6 chiffres à saisir
           dans l'app</li>
     </ol>
 
-    <!-- Le manifest est choisi par le script plus bas : la version stable si
-         elle existe, sinon la dernière bêta. -->
-    <esp-web-install-button id="install">
-      <button slot="activate">Installer le firmware</button>
-    </esp-web-install-button>
+    <!-- ⚠️ Chaque flash est inscrit au registre de production (MAC, lot, qui,
+         version) : c'est pour ça que la page est derrière une connexion
+         GitHub, et qu'ESP Web Tools, qui ne donne pas la MAC, a été remplacé.
+         Le flasheur choisit lui-même la version stable si elle existe, la
+         dernière bêta sinon. Voir tools/flash/. -->
+    <div id="flasheur" data-produit="VIEW" data-adresse="https://flash.tinyview.xptrucks.fr/"></div>
 
     <p class="note">
       Navigateur requis : <strong>Chrome</strong> ou <strong>Edge</strong> (Web Serial API)
@@ -175,6 +185,10 @@
     </p>
   </div>
 
+  <script type="module">
+    import { monterFlasheur } from './flasheur.js';
+    monterFlasheur(document.getElementById('flasheur'));
+  </script>
   <script>
     // ⚠️ LA PAGE SUIT LE FIRMWARE, BÊTA COMPRISE. Elle ne lisait que le
     // manifest stable, que seule une version stable publie : le View n'en
@@ -187,10 +201,6 @@
     lire('install-manifest.json')
       .catch(() => lire('install-manifest-beta.json'))
       .then(({ f, m }) => {
-        // Attribut ET propriété : ESP Web Tools peut lire l'un ou l'autre.
-        const bouton = document.getElementById('install');
-        bouton.setAttribute('manifest', f);
-        bouton.manifest = f;
         const beta = f.includes('beta');
         document.getElementById('version-badge').textContent =
           'v' + m.version + (beta ? ' (bêta)' : '');
