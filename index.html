@@ -100,15 +100,17 @@
   <div class="card">
     <div class="logo">🖥️</div>
     <h1>TinyRail View</h1>
-    <p class="subtitle">Afficheur e-paper — réservoirs, mesures et commandes</p>
+    <p class="subtitle">Écran tactile 4 pouces — réservoirs, mesures et commandes</p>
     <span class="badge" id="version-badge">Chargement…</span>
 
-    <!-- ⚠️ Tant que le produit n'est pas éprouvé sur matériel, la page le dit.
-         Une page d'installation qui se tait laisse croire à un produit fini. -->
+    <!-- ⚠️ Tant que le produit n'est pas éprouvé EN SERVICE, la page le dit.
+         Une page d'installation qui se tait laisse croire à un produit fini.
+         L'écran, le tactile et l'expandeur tournent depuis le 2026-09-26 ;
+         c'est l'usage avec une carte dans un van qui reste à éprouver. -->
     <div class="warn" id="preview-warning">
       <strong>Version de développement.</strong>
-      Le TinyRail View n'a pas encore été éprouvé sur du matériel. Ce firmware
-      sert aux essais, pas à un van en service.
+      Le TinyView tourne sur son écran, mais n'a pas encore été éprouvé avec
+      une carte dans un van. Ce firmware sert aux essais, pas à un van en service.
     </div>
 
     <ol class="steps">
@@ -116,11 +118,13 @@
       <li>Cliquez sur <strong>Installer</strong> ci-dessous</li>
       <li>Sélectionnez le port USB dans le navigateur</li>
       <li>Ensuite, tout se règle depuis l'<strong>application mobile</strong> :
-          appui long sur <strong>PWR</strong>, l'écran affiche un code à
-          6 chiffres à saisir dans l'app</li>
+          ajoutez le View, son écran affiche un code à 6 chiffres à saisir
+          dans l'app</li>
     </ol>
 
-    <esp-web-install-button manifest="install-manifest.json">
+    <!-- Le manifest est choisi par le script plus bas : la version stable si
+         elle existe, sinon la dernière bêta. -->
+    <esp-web-install-button id="install">
       <button slot="activate">Installer le firmware</button>
     </esp-web-install-button>
 
@@ -167,18 +171,32 @@
     </div>
 
     <p class="note">
-      <a href="https://github.com/chpeps/tinyrail-view-releases/releases">Voir toutes les versions →</a>
+      <a href="https://github.com/Xptrucks/tinyrail-view-releases/releases">Voir toutes les versions →</a>
     </p>
   </div>
 
   <script>
-    fetch('install-manifest.json')
-      .then(r => r.json())
-      .then(m => {
-        document.getElementById('version-badge').textContent = 'v' + m.version;
+    // ⚠️ LA PAGE SUIT LE FIRMWARE, BÊTA COMPRISE. Elle ne lisait que le
+    // manifest stable, que seule une version stable publie : le View n'en
+    // ayant aucune, la page est restée sur la 0.0.1 de l'e-paper, pendant que
+    // l'app servait la 0.2.0-beta.2 (2026-09-30). Le stable l'emporte dès qu'il
+    // existe ; en attendant, c'est la dernière bêta qui s'installe.
+    // ⚠️ Un fichier absent répond 200 avec du HTML (application d'une seule
+    // page) : c'est le JSON qui échoue, pas le statut.
+    const lire = f => fetch(f).then(r => r.json()).then(m => ({ f, m }));
+    lire('install-manifest.json')
+      .catch(() => lire('install-manifest-beta.json'))
+      .then(({ f, m }) => {
+        // Attribut ET propriété : ESP Web Tools peut lire l'un ou l'autre.
+        const bouton = document.getElementById('install');
+        bouton.setAttribute('manifest', f);
+        bouton.manifest = f;
+        const beta = f.includes('beta');
+        document.getElementById('version-badge').textContent =
+          'v' + m.version + (beta ? ' (bêta)' : '');
         // L'avertissement disparaît de lui-même à la première version stable :
         // c'est le numéro qui décide, pas quelqu'un qui pense à l'enlever.
-        if (!/^0\./.test(m.version)) {
+        if (!beta && !/^0\./.test(m.version)) {
           document.getElementById('preview-warning').remove();
         }
       })
