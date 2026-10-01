@@ -184,21 +184,48 @@ async function flash(ctx, qui) {
 }
 
 // ⚠️ `text/plain` : Apps Script lit le corps tel quel. Il répond par une
-// redirection, que fetch suit, et le script a déjà écrit à ce moment-là.
+// redirection, et le script a déjà écrit à ce moment-là.
 async function registrePost(env, corps) {
-  const r = await fetch(env.FLASH_SHEET_URL, {
+  const appel = () => appelRegistre(env.FLASH_SHEET_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ ...corps, secret: env.FLASH_SHEET_SECRET }),
-    redirect: 'follow',
   });
-  return lireRegistre(r);
+  // Un flash sans `flash_id` ne se rejoue pas : le script a pu l'inscrire
+  // avant que la lecture de sa réponse échoue, et rien ne dédoublonnerait.
+  return corps.mac && !corps.flash_id ? appel() : avecRelance(appel);
 }
 
 async function registreGet(env, params) {
   const url = new URL(env.FLASH_SHEET_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  return lireRegistre(await fetch(url, { redirect: 'follow' }));
+  return avecRelance(() => appelRegistre(url, {}));
+}
+
+// ⚠️ GOOGLE REND PARFOIS 404 SUR LA LECTURE DE LA RÉPONSE, pas sur l'exécution :
+// le script répond toujours 302 vers googleusercontent, et c'est là que vient le
+// 404, après une exécution longue (2 appels sur 30, à 30 et 40 s, mesuré le
+// 2026-10-01). C'était le « registre injoignable » qu'un rafraîchissement
+// réparait, et le « refusé » d'un flash pourtant inscrit. Défaut connu, même
+// remède que markkrizsan/prospect-os#3 : suivre la redirection soi-même et
+// redemander CETTE lecture, sans relancer le script.
+async function appelRegistre(url, options) {
+  const r = await fetch(url, { ...options, redirect: 'manual' });
+  const suite = r.status >= 300 && r.status < 400 && r.headers.get('Location');
+  if (!suite) return lireRegistre(r);
+  let lu;
+  for (let essai = 0; essai < 3; essai++) {
+    if (essai) await new Promise((fin) => setTimeout(fin, 500 * essai));
+    lu = await lireRegistre(await fetch(suite));
+    if (!lu.injoignable) return lu;
+  }
+  return lu;
+}
+
+// En dernier recours, le script lui-même, une fois de plus.
+async function avecRelance(appel) {
+  const r = await appel();
+  return r.injoignable ? appel() : r;
 }
 
 // ⚠️ Un script qui lève une exception répond 200 avec une PAGE HTML : le

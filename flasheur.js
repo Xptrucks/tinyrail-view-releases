@@ -130,12 +130,25 @@ export function monterFlasheur(racine) {
         eraseAll: false, compress: true,
         reportProgress: (_, ecrit, total) => { barre.value = Math.round((ecrit / total) * 100); },
       });
-      await loader.after('hard_reset');
+      // ⚠️ PAS `loader.after('hard_reset')` : le HardReset d'esptool-js (0.7.0,
+      // la dernière, source comprise) relâche RTS sans l'avoir jamais tiré, et
+      // la puce reste dans le chargeur : le View ne repartait qu'au bouton.
+      // Séquence de l'esptool Python, DTR relâché d'abord, sans quoi elle
+      // repartirait en mode téléchargement. Éprouvé sur le View le 2026-10-01 :
+      // rien avec la séquence d'esptool-js ; avec celle-ci, rst:0x15, boot:0xb.
+      await transport.setDTR(false);
+      await transport.setRTS(true);
+      await new Promise((fin) => setTimeout(fin, 100));
+      await transport.setRTS(false);
 
       const r = await rapport('ok');
+      // ⚠️ Injoignable n'est pas refusé : le script a souvent DÉJÀ inscrit le
+      // flash quand la lecture de sa réponse échoue (vu le 2026-10-01).
       etat(r.ok
         ? `Flash réussi. ${mac} est inscrit au registre${r.notes && r.notes.length ? ' (' + r.notes.join(' ; ') + ')' : ''}.`
-        : `Flash réussi, mais le registre a refusé l'inscription : ${r.erreur}. Notez la MAC ${mac}.`);
+        : r.injoignable
+          ? `Flash réussi, mais le registre n'a pas confirmé l'inscription (${r.erreur}). Elle a pu avoir lieu : cherchez la MAC ${mac} dans l'onglet Flashs.`
+          : `Flash réussi, mais le registre a refusé l'inscription : ${r.erreur}. Notez la MAC ${mac}.`);
     } catch (e) {
       // Un renoncement au choix du port n'est pas un échec : rien n'a été touché.
       if (e.name === 'NotFoundError') {
