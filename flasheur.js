@@ -70,6 +70,8 @@ export function monterFlasheur(racine) {
     }
     const rl = await fetch(`/api/lots?produit=${encodeURIComponent(produit)}`);
     if (rl.status === 401) return reconnecter();
+    // Sans lots, le flash partirait sans batch_id : on s'arrête, bouton éteint.
+    if (!rl.ok) throw new Error((await rl.json()).erreur || `lots illisibles (${rl.status})`);
     const { batches = [] } = await rl.json();
     for (const b of batches) choixLot.add(new Option(b.batch_id, b.batch_id));
     if (batches.length === 1) choixLot.value = batches[0].batch_id;
@@ -84,13 +86,15 @@ export function monterFlasheur(racine) {
     barre.value = 0;
     let mac = null;
     let transport = null;
+    // Un identifiant par flash, le même pour son rapport, même renvoyé.
+    const flashId = crypto.randomUUID();
     // Rendu après l'écriture : une session expirée pendant le flash ne doit
     // pas perdre la MAC. On le dit, avec la MAC, au lieu de repartir.
     const rapport = (resultat, detail) => fetch('/api/flash', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mac, produit_id: produit, batch_id: choixLot.value, version: manifest.version,
-        canal, resultat, detail }),
+        canal, resultat, detail, flash_id: flashId }),
     }).then((r) => r.json());
 
     try {

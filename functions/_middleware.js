@@ -134,7 +134,12 @@ async function autorise(ctx, login, jeton) {
     headers: enTetesGitHub(jeton),
   });
   if (r.ok && (await r.json()).state === 'active') return true;
-  const registre = await registreGet(ctx.env, { autorises: '1' });
+  // ⚠️ En POST, secret dans le CORPS : dans l'adresse, il finissait dans les
+  // journaux d'exécution de Google.
+  const registre = await registrePost(ctx.env, { action: 'autorises' });
+  // Une panne n'est pas un refus : sinon le distributeur lit qu'il n'a pas les
+  // droits, et on cherche dans `Distributeurs` un défaut qui n'y est pas.
+  if (registre.injoignable) throw new Error(`${registre.erreur} : réessayez dans un instant`);
   return (registre.autorises || []).map((l) => l.toLowerCase()).includes(login.toLowerCase());
 }
 
@@ -151,6 +156,7 @@ async function github(adresse, jeton) {
 
 async function lots(ctx, url) {
   const registre = await registreGet(ctx.env, {});
+  if (registre.injoignable) return json(registre, 502);
   const produit = url.searchParams.get('produit');
   const liste = (registre.batches || []).filter((b) => !produit || b.produit_id === produit);
   return json({ ok: true, batches: liste });
@@ -161,7 +167,6 @@ async function lots(ctx, url) {
 async function flash(ctx, qui) {
   const recu = await ctx.request.json();
   const envoi = {
-    secret: ctx.env.FLASH_SHEET_SECRET,
     mac: recu.mac,
     produit_id: recu.produit_id,
     batch_id: recu.batch_id,
@@ -169,26 +174,41 @@ async function flash(ctx, qui) {
     canal: recu.canal,
     resultat: recu.resultat,
     detail: recu.detail,
+    // Tiré par la page à chaque flash : un envoi répété ne s'inscrit qu'une fois.
+    flash_id: recu.flash_id,
     qui,
     outil: 'page web',
   };
-  // ⚠️ `text/plain` : Apps Script lit le corps tel quel. Il répond par une
-  // redirection, que fetch suit, et le script a déjà écrit à ce moment-là.
-  const r = await fetch(ctx.env.FLASH_SHEET_URL, {
+  const reponse = await registrePost(ctx.env, envoi);
+  return json(reponse, reponse.injoignable ? 502 : 200);
+}
+
+// ⚠️ `text/plain` : Apps Script lit le corps tel quel. Il répond par une
+// redirection, que fetch suit, et le script a déjà écrit à ce moment-là.
+async function registrePost(env, corps) {
+  const r = await fetch(env.FLASH_SHEET_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(envoi),
+    body: JSON.stringify({ ...corps, secret: env.FLASH_SHEET_SECRET }),
     redirect: 'follow',
   });
-  return json(await r.json(), r.ok ? 200 : 502);
+  return lireRegistre(r);
 }
 
 async function registreGet(env, params) {
   const url = new URL(env.FLASH_SHEET_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  if (params.autorises) url.searchParams.set('secret', env.FLASH_SHEET_SECRET);
-  const r = await fetch(url, { redirect: 'follow' });
-  return r.ok ? r.json() : {};
+  return lireRegistre(await fetch(url, { redirect: 'follow' }));
+}
+
+// ⚠️ Un script qui lève une exception répond 200 avec une PAGE HTML : le
+// statut ne suffit pas, seul un JSON lisible prouve que le registre a répondu.
+async function lireRegistre(r) {
+  const texte = await r.text();
+  try {
+    if (r.ok) return JSON.parse(texte);
+  } catch {}
+  return { ok: false, injoignable: true, erreur: `registre injoignable (${r.status}${r.ok ? ', réponse illisible' : ''})` };
 }
 
 // ── Session signée ───────────────────────────────────────────────────────
