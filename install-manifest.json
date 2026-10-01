@@ -1,0 +1,13 @@
+{
+  "name": "TinyRail View",
+  "version": "0.2.0",
+  "home_assistant_domain": "esphome",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "https://flash.tinyview.xptrucks.fr/firmware.factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
