@@ -1,14 +1,14 @@
 {
   "name": "TinyRail View",
-  "version": "0.6.0-beta.4",
+  "version": "0.6.0-beta.5",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "ota": {
         "path": "https://flash.tinyview.xptrucks.fr/firmware-beta.bin",
-        "md5": "7de1a2e88146d66bab967750bc34cdf6",
+        "md5": "a34c83e39cfe4f3a268d29d8a112a2c9",
         "summary": "Voir les notes de release sur GitHub",
-        "release_url": "https://github.com/Xptrucks/tinyrail-view-releases/releases/tag/v0.6.0-beta.4"
+        "release_url": "https://github.com/Xptrucks/tinyrail-view-releases/releases/tag/v0.6.0-beta.5"
       }
     }
   ]
