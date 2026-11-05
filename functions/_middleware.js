@@ -26,6 +26,9 @@ const DUREE_SESSION = 12 * 3600; // secondes
 export async function onRequest(ctx) {
   const url = new URL(ctx.request.url);
   const chemin = url.pathname;
+  // ⚠️ `return await` partout dans ce try : une promesse rendue sans await
+  // s'échappe du catch, et une erreur (registre en panne, produit inconnu)
+  // devenait une page d'erreur brute de Cloudflare au lieu de son JSON.
   try {
     // ⚠️ UNE SEULE ADRESSE POUR SE CONNECTER. Le même projet sert la page sous
     // d'autres noms (`ota.tinyrail.` pour la carte, `view.tinyrail.` pour le
@@ -39,8 +42,8 @@ export async function onRequest(ctx) {
       return Response.redirect(`${officielle}${chemin}${url.search}`, 302);
     }
 
-    if (chemin === '/auth/login') return connexion(ctx, url);
-    if (chemin === '/auth/callback') return retour(ctx, url);
+    if (chemin === '/auth/login') return await connexion(ctx, url);
+    if (chemin === '/auth/callback') return await retour(ctx, url);
     if (chemin === '/auth/logout') return deconnexion();
 
     const qui = await session(ctx);
@@ -53,9 +56,13 @@ export async function onRequest(ctx) {
     }
 
     if (chemin === '/api/moi') return json({ ok: true, login: qui });
-    if (chemin === '/api/lots') return lots(ctx, url);
-    if (chemin === '/api/flash' && ctx.request.method === 'POST') return flash(ctx, qui);
-    return ctx.next();
+    if (chemin === '/api/lots') return await lots(ctx, url);
+    if (chemin === '/api/produits') return await produits(ctx);
+    if (chemin === '/api/manifest') return await manifestProduit(ctx, url);
+    if (chemin === '/api/image') return await imageProduit(ctx, url);
+    if (chemin === '/api/flash' && ctx.request.method === 'POST') return await flash(ctx, qui);
+    if (chemin === '/api/identite' && ctx.request.method === 'POST') return await identite(ctx, qui);
+    return await ctx.next();
   } catch (err) {
     return json({ ok: false, erreur: String(err.message || err) }, 500);
   }
@@ -162,6 +169,89 @@ async function lots(ctx, url) {
   return json({ ok: true, batches: liste });
 }
 
+// ── Les produits, et leur firmware ───────────────────────────────────────
+// Une seule page pour tous les produits (flash.xptrucks.fr) : leur liste, et
+// l'adresse du manifeste d'installation de chacun, viennent de l'onglet
+// `Produits` du registre. Ajouter un produit ne touche pas au code.
+//
+// ⚠️ Le manifeste et l'image se lisent sur le MIROIR PUBLIC du dépôt de
+// releases du produit (`manifest_url`, GitHub Pages), et passent par ici :
+// seule une session connectée les obtient de cette page, comme avant.
+
+async function listeProduits(env) {
+  const registre = await registreGet(env, {});
+  if (registre.injoignable) return registre;
+  return { ok: true, produits: (registre.produits || []).filter((p) => p.actif === 'oui' && p.manifest_url) };
+}
+
+async function produits(ctx) {
+  const r = await listeProduits(ctx.env);
+  return json(r, r.injoignable ? 502 : 200);
+}
+
+// Le manifeste stable s'il existe, la dernière bêta sinon, comme l'ancienne
+// page ; SEULEMENT le canal nommé si [canal] vaut `beta` ou `stable` (la bêta
+// choisie dans la page, ou le canal que l'image doit suivre). Un fichier absent
+// répond 200 avec du HTML sur certains hôtes : seul un JSON qui porte `builds`
+// compte. Exportée, comme manifestProduit et imageProduit, pour
+// tools/flash/essai-manifeste.mjs ; Pages ne route que les `onRequest`.
+export async function lireManifestProduit(env, produitId, canal) {
+  const r = await listeProduits(env);
+  if (!r.ok) throw new Error(r.erreur || 'registre injoignable');
+  const p = r.produits.find((x) => x.produit_id === produitId);
+  if (!p) throw new Error(`produit inconnu ou inactif : ${produitId}`);
+  const stable = new URL(p.manifest_url);
+  const beta = new URL(stable.pathname.replace(/\.json$/, '-beta.json'), stable);
+  const candidats = canal === 'beta' ? [[beta, 'bêta']]
+    : canal === 'stable' ? [[stable, 'stable']]
+      : [[stable, 'stable'], [beta, 'bêta']];
+  let enPanne = false;   // un miroir qui répond 5xx n'est pas une bêta absente
+  for (const [adresse, canal] of candidats) {
+    const reponse = await fetch(adresse, { cf: { cacheTtl: 60 } });
+    if (reponse.status >= 500) enPanne = true;
+    if (!reponse.ok) continue;
+    try {
+      const m = await reponse.json();
+      if (m.version && Array.isArray(m.builds)) return { manifest: m, canal, adresse };
+    } catch (_) { /* pas un manifeste */ }
+  }
+  throw new Error(enPanne ? `miroir de ${produitId} indisponible, réessayez`
+    : canal === 'beta' ? `pas d'image d'usine bêta publiée pour ${produitId}`
+      : `aucun manifeste pour ${produitId}`);
+}
+
+// Le manifeste, l'image réécrite vers /api/image : la page ne connaît jamais
+// l'adresse du miroir.
+export async function manifestProduit(ctx, url) {
+  const produitId = url.searchParams.get('produit');
+  const voulu = url.searchParams.get('canal');
+  const { manifest, canal } = await lireManifestProduit(ctx.env, produitId, voulu);
+  const part = manifest.builds[0].parts[0];
+  // ⚠️ Le canal TROUVÉ et la version suivent jusqu'à l'image : relue sans
+  // eux, elle pourrait venir d'un autre canal, ou d'une release sortie entre-
+  // temps, que la version annoncée et inscrite au registre.
+  part.path = `/api/image?produit=${encodeURIComponent(produitId)}` +
+    `&canal=${canal === 'bêta' ? 'beta' : 'stable'}&version=${encodeURIComponent(manifest.version)}`;
+  return json({ ok: true, canal, manifest });
+}
+
+// L'image d'usine, lue à côté du manifeste sur le miroir, et rendue telle quelle.
+export async function imageProduit(ctx, url) {
+  const produitId = url.searchParams.get('produit');
+  const { manifest, adresse } = await lireManifestProduit(
+    ctx.env, produitId, url.searchParams.get('canal'));
+  const version = url.searchParams.get('version');
+  if (version && manifest.version !== version) {
+    return json({ ok: false, erreur: `une autre version est sortie (${manifest.version}) : rechargez la page` }, 409);
+  }
+  const nom = new URL(manifest.builds[0].parts[0].path).pathname.split('/').pop();
+  const image = await fetch(new URL(nom, adresse));
+  if (!image.ok) return json({ ok: false, erreur: `image introuvable (${image.status})` }, 502);
+  return new Response(image.body, {
+    headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' },
+  });
+}
+
 // ⚠️ `qui` et `outil` sont posés ICI, jamais repris de la page : c'est la
 // session qui dit qui a flashé, pas ce que le navigateur prétend.
 async function flash(ctx, qui) {
@@ -180,6 +270,30 @@ async function flash(ctx, qui) {
     outil: 'page web',
   };
   const reponse = await registrePost(ctx.env, envoi);
+  return json(reponse, reponse.injoignable ? 502 : 200);
+}
+
+// L'identité d'une carte (D-186), décidée par le registre : uid, nom BLE,
+// code d'appairage, code SAV et URL de l'étiquette. La page l'écrit dans la
+// puce et l'imprime. Le registre inscrit chaque demande avec `qui`, posé ici
+// comme pour un flash.
+//
+// ⚠️ « uid invalide : undefined » (5 flashs, 20 et 23/10/2026) : la page a reçu
+// `ok` SANS uid, alors que le registre l'avait tiré et réservé (onglet Codes).
+// Cause non trouvée. Une identité sans uid est donc redemandée une fois, sans
+// risque : le registre rend l'uid déjà réservé pour cette MAC, pas un nouveau.
+// Les champs reçus vont au journal de Pages (jamais leurs valeurs : le code
+// d'appairage en fait partie), même quand la redemande réussit.
+// ⚠️ Toujours sans uid, la réponse part TELLE QUELLE : la page arrête alors le
+// flash avant d'écrire. Un `ok: false` la ferait flasher sans code d'appairage.
+async function identite(ctx, qui) {
+  const { mac, produit_id, batch_id } = await ctx.request.json();
+  const demande = () => avecRelance(() => registrePost(ctx.env, { action: 'identite', mac, produit_id, batch_id, qui }));
+  let reponse = await demande();
+  if (reponse.ok && !reponse.uid) {
+    console.warn(`identité sans uid pour ${mac} (reçu : ${Object.keys(reponse).join(', ')}), redemandée`);
+    reponse = await demande();
+  }
   return json(reponse, reponse.injoignable ? 502 : 200);
 }
 
